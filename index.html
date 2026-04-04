@@ -415,6 +415,7 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
 </head>
 <body>
 
@@ -536,10 +537,13 @@ function md5(str) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-// ── SHA via SubtleCrypto ────────────────────────────────────────────────────
-async function sha(algorithm, str) {
-  const buf = await crypto.subtle.digest(algorithm, new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+// ── SHA via CryptoJS ───────────────────────────────────────────────────────
+function sha(algorithm, str) {
+  switch (algorithm) {
+    case 'SHA-1':   return CryptoJS.SHA1(str).toString(CryptoJS.enc.Hex);
+    case 'SHA-256': return CryptoJS.SHA256(str).toString(CryptoJS.enc.Hex);
+    case 'SHA-512': return CryptoJS.SHA512(str).toString(CryptoJS.enc.Hex);
+  }
 }
 
 // ── Modes ──────────────────────────────────────────────────────────────────
@@ -602,12 +606,10 @@ async function convert() {
       }
 
       case 'hash': {
-        const [s1, s256, s512] = await Promise.all([
-          sha('SHA-1', val),
-          sha('SHA-256', val),
-          sha('SHA-512', val),
-        ]);
-        const m = md5(val);
+        const m    = md5(val);
+        const s1   = sha('SHA-1', val);
+        const s256 = sha('SHA-256', val);
+        const s512 = sha('SHA-512', val);
         renderHashes([
           { label: 'MD5',     value: m },
           { label: 'SHA-1',   value: s1 },
