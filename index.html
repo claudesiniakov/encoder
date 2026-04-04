@@ -478,6 +478,7 @@
       <span id="output-label">Output</span>
       <div class="panel-actions">
         <span id="output-meta" class="output-meta"></span>
+        <button class="btn" id="btn-save-file" style="display:none">↓ Save file</button>
         <button class="btn" id="btn-copy">Copy</button>
         <button class="btn btn-primary" id="btn-swap" title="Use output as input for next operation">⇄ Swap</button>
       </div>
@@ -586,9 +587,26 @@ async function convert() {
         result = btoa(unescape(encodeURIComponent(val)));
         break;
 
-      case 'base64-dec':
-        result = decodeURIComponent(escape(atob(val.trim())));
+      case 'base64-dec': {
+        const raw = atob(val.trim().replace(/\s/g, ''));
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        const isBinary = bytes.some(b => b < 9 || (b > 13 && b < 32));
+        if (isBinary) {
+          const mime = detectMime(bytes);
+          window._lastBytes = { bytes, mime };
+          const ext = mime.split('/')[1]?.replace('jpeg','jpg') || 'bin';
+          setOutput(`[Binary file detected: ${mime}]\nSize: ${bytes.length} bytes — use "Save file" to download`, false);
+          document.getElementById('output-meta').textContent = `${bytes.length} bytes · ${ext.toUpperCase()}`;
+          document.getElementById('btn-save-file').style.display = '';
+          setStatus('OK — binary');
+          return;
+        }
+        window._lastBytes = null;
+        document.getElementById('btn-save-file').style.display = 'none';
+        result = new TextDecoder().decode(bytes);
         break;
+      }
 
       case 'url-enc':
         result = encodeURIComponent(val);
@@ -675,6 +693,29 @@ function renderHashes(hashes) {
   window._lastOutput = hashes.map(h => `${h.label}: ${h.value}`).join('\n');
 }
 
+function detectMime(bytes) {
+  const h = (i) => bytes[i];
+  if (h(0)===0xFF && h(1)===0xD8 && h(2)===0xFF)            return 'image/jpeg';
+  if (h(0)===0x89 && h(1)===0x50 && h(2)===0x4E && h(3)===0x47) return 'image/png';
+  if (h(0)===0x47 && h(1)===0x49 && h(2)===0x46)            return 'image/gif';
+  if (h(0)===0x25 && h(1)===0x50 && h(2)===0x44 && h(3)===0x46) return 'application/pdf';
+  if (h(0)===0x50 && h(1)===0x4B && h(2)===0x03 && h(3)===0x04) return 'application/zip';
+  if (h(0)===0x1F && h(1)===0x8B)                           return 'application/gzip';
+  return 'application/octet-stream';
+}
+
+document.getElementById('btn-save-file').addEventListener('click', () => {
+  if (!window._lastBytes) return;
+  const { bytes, mime } = window._lastBytes;
+  const ext = mime.split('/')[1]?.replace('jpeg','jpg').replace('octet-stream','bin') || 'bin';
+  const blob = new Blob([bytes], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `decoded.${ext}`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
 function highlightJWT(text) {
   const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   return esc(text)
@@ -708,6 +749,8 @@ document.getElementById('mode-tabs').addEventListener('click', e => {
   document.getElementById('input-label').textContent  = m.inputLabel;
   document.getElementById('output-label').textContent = m.outputLabel;
   document.getElementById('status-mode').textContent  = '· ' + btn.textContent;
+  document.getElementById('btn-save-file').style.display = 'none';
+  window._lastBytes = null;
   input.placeholder = m.hashMode ? 'Enter text to hash…' : 'Enter text here…';
   convert();
 });
