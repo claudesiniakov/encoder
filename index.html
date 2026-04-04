@@ -685,12 +685,24 @@ function renderHashes(hashes) {
   `).join('');
   output.querySelectorAll('.hash-copy-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await navigator.clipboard.writeText(btn.dataset.val);
+      await copyToClipboard(btn.dataset.val);
       btn.textContent = '✓';
       setTimeout(() => { btn.textContent = 'Copy'; }, 1400);
     });
   });
   window._lastOutput = hashes.map(h => `${h.label}: ${h.value}`).join('\n');
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  return Promise.resolve();
 }
 
 function detectMime(bytes) {
@@ -795,7 +807,7 @@ document.getElementById('btn-paste').addEventListener('click', async () => {
 
 document.getElementById('btn-copy').addEventListener('click', async () => {
   if (!window._lastOutput) return;
-  await navigator.clipboard.writeText(window._lastOutput);
+  await copyToClipboard(window._lastOutput);
   const btn = document.getElementById('btn-copy');
   btn.textContent = '✓ Copied';
   setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
