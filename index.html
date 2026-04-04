@@ -126,6 +126,7 @@
       flex: 1;
       overflow-x: auto;
       scrollbar-width: none;
+      align-items: center;
     }
 
     .mode-tabs::-webkit-scrollbar { display: none; }
@@ -151,6 +152,14 @@
       border-color: var(--border);
       color: var(--accent);
       font-weight: 600;
+    }
+
+    .tab-sep {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+      flex-shrink: 0;
+      margin: 0 2px;
     }
 
     /* ── Header right ── */
@@ -271,6 +280,8 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
+      position: relative;
+      padding-right: 56px;
     }
 
     .hash-label {
@@ -286,6 +297,38 @@
       word-break: break-all;
       font-size: 13px;
     }
+
+    .hash-copy-btn {
+      position: absolute;
+      right: 0;
+      top: 0;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--dim);
+      font-size: 11px;
+      font-family: 'Inter', sans-serif;
+      padding: 2px 8px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .hash-row:hover .hash-copy-btn { opacity: 1; }
+    .hash-copy-btn:hover { color: var(--text); border-color: var(--accent); }
+
+    /* ── output-meta ── */
+    .output-meta {
+      font-size: 11px;
+      color: var(--dim);
+    }
+
+    /* ── JWT syntax highlight ── */
+    .jt-key   { color: var(--accent); }
+    .jt-str   { color: var(--green); }
+    .jt-num   { color: var(--red); }
+    .jt-bool  { color: var(--dim); font-style: italic; }
+    .jt-cmt   { color: var(--dim); opacity: 0.6; }
 
     /* ── Status bar ── */
     .status-bar {
@@ -382,14 +425,18 @@
   </div>
 
   <div class="mode-tabs" id="mode-tabs">
-    <button class="tab active" data-mode="base64-enc">Base64 Encode</button>
-    <button class="tab" data-mode="base64-dec">Base64 Decode</button>
-    <button class="tab" data-mode="url-enc">URL Encode</button>
-    <button class="tab" data-mode="url-dec">URL Decode</button>
+    <button class="tab active" data-mode="base64-enc">Base64 Enc</button>
+    <button class="tab" data-mode="base64-dec">Base64 Dec</button>
+    <div class="tab-sep"></div>
+    <button class="tab" data-mode="url-enc">URL Enc</button>
+    <button class="tab" data-mode="url-dec">URL Dec</button>
+    <div class="tab-sep"></div>
     <button class="tab" data-mode="hash">Hash</button>
-    <button class="tab" data-mode="hex-enc">→ HEX</button>
-    <button class="tab" data-mode="hex-dec">HEX →</button>
-    <button class="tab" data-mode="jwt">JWT Decode</button>
+    <div class="tab-sep"></div>
+    <button class="tab" data-mode="hex-enc">HEX Enc</button>
+    <button class="tab" data-mode="hex-dec">HEX Dec</button>
+    <div class="tab-sep"></div>
+    <button class="tab" data-mode="jwt">JWT Dec</button>
   </div>
 
   <div class="header-right">
@@ -421,9 +468,9 @@
     <div class="panel-header">
       <span id="output-label">Output</span>
       <div class="panel-actions">
-        <span id="output-meta" style="font-size:11px;color:var(--dim);"></span>
+        <span id="output-meta" class="output-meta"></span>
         <button class="btn" id="btn-copy">Copy</button>
-        <button class="btn btn-primary" id="btn-swap" title="Swap input/output">⇄ Swap</button>
+        <button class="btn btn-primary" id="btn-swap" title="Use output as input for next operation">⇄ Swap</button>
       </div>
     </div>
     <div class="output-area empty" id="output">Result will appear here…</div>
@@ -433,6 +480,7 @@
 
 <div class="status-bar">
   <span id="status-msg">Ready</span>
+  <span id="status-mode" style="color:var(--dim);opacity:0.6;"></span>
   <span id="char-count" style="margin-left:auto"></span>
 </div>
 
@@ -574,11 +622,16 @@ async function convert() {
         const parts = val.trim().split('.');
         if (parts.length < 2) throw new Error('Invalid JWT (need at least 2 parts)');
         const decode = p => JSON.parse(decodeURIComponent(escape(atob(p.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(p.length/4)*4,'=')))));
-        const header  = decode(parts[0]);
+        const jwtHeader  = decode(parts[0]);
         const payload = decode(parts[1]);
-        result = `// Header\n${JSON.stringify(header, null, 2)}\n\n// Payload\n${JSON.stringify(payload, null, 2)}`;
-        if (parts.length === 3) result += `\n\n// Signature (not verified)\n${parts[2]}`;
-        break;
+        const raw = `// Header\n${JSON.stringify(jwtHeader, null, 2)}\n\n// Payload\n${JSON.stringify(payload, null, 2)}` +
+          (parts.length === 3 ? `\n\n// Signature (not verified)\n${parts[2]}` : '');
+        output.className = 'output-area';
+        output.innerHTML = highlightJWT(raw);
+        window._lastOutput = raw;
+        document.getElementById('output-meta').textContent = `${parts.length} parts`;
+        setStatus('OK — JWT decoded');
+        return;
       }
     }
 
@@ -599,9 +652,27 @@ function renderHashes(hashes) {
     <div class="hash-row">
       <div class="hash-label">${h.label}</div>
       <div class="hash-value">${h.value}</div>
+      <button class="hash-copy-btn" data-val="${h.value}">Copy</button>
     </div>
   `).join('');
+  output.querySelectorAll('.hash-copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(btn.dataset.val);
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 1400);
+    });
+  });
   window._lastOutput = hashes.map(h => `${h.label}: ${h.value}`).join('\n');
+}
+
+function highlightJWT(text) {
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return esc(text)
+    .replace(/(\/\/[^\n]*)/g, '<span class="jt-cmt">$1</span>')
+    .replace(/"([^"]+)"(\s*:)/g, '<span class="jt-key">"$1"</span>$2')
+    .replace(/:\s*("(?:[^"\\]|\\.)*")/g, ': <span class="jt-str">$1</span>')
+    .replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="jt-num">$1</span>')
+    .replace(/:\s*(true|false|null)/g, ': <span class="jt-bool">$1</span>');
 }
 
 function setOutput(text, isEmpty) {
@@ -626,9 +697,12 @@ document.getElementById('mode-tabs').addEventListener('click', e => {
   const m = MODES[currentMode];
   document.getElementById('input-label').textContent  = m.inputLabel;
   document.getElementById('output-label').textContent = m.outputLabel;
+  document.getElementById('status-mode').textContent  = '· ' + btn.textContent;
   input.placeholder = m.hashMode ? 'Enter text to hash…' : 'Enter text here…';
   convert();
 });
+
+document.getElementById('status-mode').textContent = '· ' + (document.querySelector('.tab.active')?.textContent || '');
 
 // ── Controls ───────────────────────────────────────────────────────────────
 input.addEventListener('input', convert);
@@ -643,7 +717,10 @@ document.getElementById('btn-paste').addEventListener('click', async () => {
   try {
     input.value = await navigator.clipboard.readText();
     convert();
-  } catch { input.focus(); }
+  } catch {
+    setStatus('Clipboard access denied — paste manually (Ctrl+V)', true);
+    input.focus();
+  }
 });
 
 document.getElementById('btn-copy').addEventListener('click', async () => {
