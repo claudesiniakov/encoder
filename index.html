@@ -49,7 +49,7 @@
       --dim:     #4a7a28;
       --accent:  #4af626;
       --green:   #4af626;
-      --red:     #c8f040;
+      --red:     #e8a020;
       --mono-bg: #060a04;
     }
 
@@ -215,6 +215,11 @@
     }
 
     .btn-primary:hover { opacity: 0.88; }
+
+    .btn-copied {
+      color: var(--green) !important;
+      border-color: var(--green) !important;
+    }
 
     /* ── Main layout ── */
     .main {
@@ -827,7 +832,11 @@ document.getElementById('btn-copy').addEventListener('click', async () => {
   await copyToClipboard(window._lastOutput);
   const btn = document.getElementById('btn-copy');
   btn.textContent = '✓ Copied';
-  setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  btn.classList.add('btn-copied');
+  setTimeout(() => {
+    btn.textContent = 'Copy';
+    btn.classList.remove('btn-copied');
+  }, 1500);
 });
 
 document.getElementById('btn-swap').addEventListener('click', () => {
