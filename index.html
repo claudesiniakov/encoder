@@ -457,6 +457,7 @@
     <div class="panel-header">
       <span id="input-label">Input</span>
       <div class="panel-actions">
+        <button class="btn" id="btn-example">Example</button>
         <button class="btn" id="btn-clear">Clear</button>
         <button class="btn" id="btn-paste">Paste</button>
       </div>
@@ -706,6 +707,23 @@ document.getElementById('status-mode').textContent = '· ' + (document.querySele
 
 // ── Controls ───────────────────────────────────────────────────────────────
 input.addEventListener('input', convert);
+
+const EXAMPLES = {
+  'base64-enc': 'Hello, World! 🌍\nThis is a Base64 encoding example.',
+  'base64-dec': 'SGVsbG8sIFdvcmxkISDwn4yNCkFuZCB0aGlzIGlzIGEgQmFzZTY0IGVuY29kaW5nIGV4YW1wbGUu',
+  'url-enc':    'https://example.com/search?q=привет мир&lang=ru&page=1',
+  'url-dec':    'https%3A%2F%2Fexample.com%2Fsearch%3Fq%3D%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82%20%D0%BC%D0%B8%D1%80%26lang%3Dru',
+  'hash':       'password123',
+  'hex-enc':    'Hello, HEX!',
+  'hex-dec':    '48 65 6c 6c 6f 2c 20 48 45 58 21',
+  'jwt':        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+};
+
+document.getElementById('btn-example').addEventListener('click', () => {
+  input.value = EXAMPLES[currentMode] || '';
+  convert();
+  input.focus();
+});
 
 document.getElementById('btn-clear').addEventListener('click', () => {
   input.value = '';
