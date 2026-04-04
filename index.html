@@ -40,6 +40,19 @@
       --mono-bg: #0d1117;
     }
 
+    [data-theme="fallout"] {
+      --bg:      #060a04;
+      --bg2:     #0c1108;
+      --bg3:     #141f0e;
+      --border:  #1f3314;
+      --text:    #a8e060;
+      --dim:     #4a7a28;
+      --accent:  #4af626;
+      --green:   #4af626;
+      --red:     #c8f040;
+      --mono-bg: #060a04;
+    }
+
     [data-theme="monokai"] {
       --bg:      #1a1b16;
       --bg2:     #23241e;
@@ -826,6 +839,7 @@ document.getElementById('btn-swap').addEventListener('click', () => {
 // ── Theme picker ───────────────────────────────────────────────────────────
 const THEMES = [
   { id: 'light',   name: 'Light',   desc: 'Светлая тема',    bg: '#f6f8fa', key: '#0369a1', str: '#16a34a', num: '#d97706' },
+  { id: 'fallout', name: 'Fallout', desc: 'Терминал Убежища', bg: '#060a04', key: '#4af626', str: '#a8e060', num: '#7af040' },
   { id: 'dark',    name: 'Dark',    desc: 'Тёмная ночь',     bg: '#0f1117', key: '#7dd3fc', str: '#86efac', num: '#fdba74' },
   { id: 'monokai', name: 'Monokai', desc: 'Классика кода',   bg: '#1a1b16', key: '#66d9e8', str: '#e6db74', num: '#ae81ff' },
   { id: 'nord',    name: 'Nord',    desc: 'Северное сияние', bg: '#242933', key: '#88c0d0', str: '#a3be8c', num: '#b48ead' },
