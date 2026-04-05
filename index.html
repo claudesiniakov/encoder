@@ -439,6 +439,86 @@
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    /* ── STATS COUNTER ── */
+    .stats-pill {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 28px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0 10px;
+      font-size: 11px;
+      color: var(--dim);
+      cursor: default;
+      flex-shrink: 0;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .stats-pill:hover { border-color: var(--accent); color: var(--text); }
+
+    .stats-pill .sp-item { display: flex; align-items: center; gap: 4px; }
+
+    .stats-pill .sp-sep { width: 1px; height: 12px; background: var(--border); }
+
+    .stats-pill .sp-val { font-weight: 600; font-size: 12px; color: var(--text); }
+
+    .stats-pill .sp-ico { font-size: 10px; opacity: 0.6; }
+
+    .stats-tooltip {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      min-width: 190px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      z-index: 200;
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+      pointer-events: none;
+      transition: opacity 0.15s, transform 0.15s cubic-bezier(.4,0,.2,1);
+      white-space: nowrap;
+    }
+
+    .stats-pill:hover .stats-tooltip { opacity: 1; transform: none; }
+
+    .stats-tooltip .st-title {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-bottom: 8px;
+    }
+
+    .stats-tooltip .st-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 3px 0;
+      font-size: 11px;
+      color: var(--dim);
+    }
+
+    .stats-tooltip .st-row:not(:last-child) { border-bottom: 1px solid var(--border); }
+
+    .stats-tooltip .st-row .st-num { font-weight: 600; color: var(--text); font-size: 12px; }
+
+    .stats-tooltip .st-section-title {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
   </style>
   <script src="vendor/crypto-js.min.js"></script>
 </head>
@@ -466,6 +546,28 @@
   </div>
 
   <div class="header-right">
+    <div class="stats-pill" id="statsPill">
+      <span class="sp-item"><span class="sp-ico">👤</span><span class="sp-val" id="spUsers">0</span></span>
+      <span class="sp-sep"></span>
+      <span class="sp-item"><span class="sp-ico">🔄</span><span class="sp-val" id="spSessions">0</span></span>
+      <span class="sp-sep"></span>
+      <span class="sp-item"><span class="sp-ico">⚡</span><span class="sp-val" id="spUsages">0</span></span>
+      <div class="stats-tooltip">
+        <div class="st-title">Статистика</div>
+        <div class="st-row"><span class="st-label">Пользователи</span><span class="st-num" id="stUsers">0</span></div>
+        <div class="st-row"><span class="st-label">Сессии</span><span class="st-num" id="stSessions">0</span></div>
+        <div class="st-row"><span class="st-label">Всего действий</span><span class="st-num" id="stTotal">0</span></div>
+        <div class="st-section-title">По режимам</div>
+        <div class="st-row"><span class="st-label">Base64 Enc</span><span class="st-num" id="st-base64-enc">0</span></div>
+        <div class="st-row"><span class="st-label">Base64 Dec</span><span class="st-num" id="st-base64-dec">0</span></div>
+        <div class="st-row"><span class="st-label">URL Enc</span><span class="st-num" id="st-url-enc">0</span></div>
+        <div class="st-row"><span class="st-label">URL Dec</span><span class="st-num" id="st-url-dec">0</span></div>
+        <div class="st-row"><span class="st-label">Hash</span><span class="st-num" id="st-hash">0</span></div>
+        <div class="st-row"><span class="st-label">HEX Enc</span><span class="st-num" id="st-hex-enc">0</span></div>
+        <div class="st-row"><span class="st-label">HEX Dec</span><span class="st-num" id="st-hex-dec">0</span></div>
+        <div class="st-row"><span class="st-label">JWT Dec</span><span class="st-num" id="st-jwt">0</span></div>
+      </div>
+    </div>
     <div class="theme-picker" id="themePicker">
       <button class="theme-picker-btn" id="themePickerBtn">
         <span id="tpSwatch"></span>
@@ -927,6 +1029,59 @@ document.addEventListener('keydown', e => {
 });
 
 updateActiveSwatch();
+
+  // ── STATS ─────────────────────────────────────────────────────────────────
+  (function initStats() {
+    const LS = 'enc_stats';
+    const LU = 'enc_uid';
+    const MODES_LIST = ['base64-enc','base64-dec','url-enc','url-dec','hash','hex-enc','hex-dec','jwt'];
+
+    let uid = localStorage.getItem(LU);
+    if (!uid) { uid = Math.random().toString(36).slice(2, 10); localStorage.setItem(LU, uid); }
+
+    let stats;
+    try { stats = JSON.parse(localStorage.getItem(LS)) || {}; } catch { stats = {}; }
+    if (!stats.sessions) stats.sessions = 0;
+    if (!stats.uids)     stats.uids     = [];
+    if (!stats.actions)  stats.actions  = {};
+    MODES_LIST.forEach(m => { if (!stats.actions[m]) stats.actions[m] = 0; });
+
+    if (!stats.uids.includes(uid)) stats.uids.push(uid);
+    stats.users = stats.uids.length;
+    stats.sessions++;
+
+    function save() { localStorage.setItem(LS, JSON.stringify(stats)); }
+    save();
+
+    function totalUsages() { return Object.values(stats.actions).reduce((a, b) => a + b, 0); }
+
+    function updateDisplay() {
+      const total = totalUsages();
+      document.getElementById('spUsers').textContent    = stats.users;
+      document.getElementById('spSessions').textContent = stats.sessions;
+      document.getElementById('spUsages').textContent   = total;
+      document.getElementById('stUsers').textContent    = stats.users;
+      document.getElementById('stSessions').textContent = stats.sessions;
+      document.getElementById('stTotal').textContent    = total;
+      MODES_LIST.forEach(m => {
+        const el = document.getElementById('st-' + m);
+        if (el) el.textContent = stats.actions[m] || 0;
+      });
+    }
+
+    updateDisplay();
+
+    document.getElementById('mode-tabs').addEventListener('click', e => {
+      const btn = e.target.closest('.tab');
+      if (!btn) return;
+      const mode = btn.dataset.mode;
+      if (mode) {
+        stats.actions[mode] = (stats.actions[mode] || 0) + 1;
+        save();
+        updateDisplay();
+      }
+    }, true);
+  })();
 </script>
 </body>
 </html>
