@@ -216,6 +216,12 @@
 
     .btn-primary:hover { opacity: 0.88; }
 
+    .btn-disabled, .btn-primary.btn-disabled {
+      opacity: 0.4 !important;
+      cursor: not-allowed !important;
+      pointer-events: none !important;
+    }
+
     .btn-copied {
       color: var(--green) !important;
       border-color: var(--green) !important;
@@ -724,6 +730,7 @@ async function convert() {
           document.getElementById('output-meta').textContent = `${bytes.length} bytes · ${ext.toUpperCase()}`;
           document.getElementById('btn-save-file').style.display = '';
           setStatus('OK — binary');
+          window._statsTrack?.('base64-dec');
           return;
         }
         window._lastBytes = null;
@@ -747,6 +754,7 @@ async function convert() {
 
       case 'hex-dec': {
         const hex = val.replace(/\s+/g, '');
+        if (!/^[0-9a-fA-F]*$/.test(hex)) throw new Error('Invalid hex — only 0–9 and A–F allowed');
         if (hex.length % 2 !== 0) throw new Error('Odd hex length');
         const bytes = [];
         for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.slice(i,i+2), 16));
@@ -767,6 +775,7 @@ async function convert() {
         ]);
         document.getElementById('output-meta').textContent = '';
         setStatus('OK — 4 algorithms');
+        window._statsTrack?.('hash');
         return;
       }
 
@@ -783,6 +792,7 @@ async function convert() {
         window._lastOutput = raw;
         document.getElementById('output-meta').textContent = `${parts.length} parts`;
         setStatus('OK — JWT decoded');
+        window._statsTrack?.('jwt');
         return;
       }
     }
@@ -790,6 +800,7 @@ async function convert() {
     setOutput(result, false);
     document.getElementById('output-meta').textContent = `${result.length} chars`;
     setStatus('OK');
+    window._statsTrack?.(currentMode);
 
   } catch (e) {
     setOutput(`Error: ${e.message}`, false);
@@ -824,7 +835,7 @@ function copyToClipboard(text) {
   ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
   document.body.appendChild(ta);
   ta.select();
-  document.execCommand('copy');
+  try { document.execCommand('copy'); } catch {}
   document.body.removeChild(ta);
   return Promise.resolve();
 }
@@ -888,17 +899,29 @@ document.getElementById('mode-tabs').addEventListener('click', e => {
   document.getElementById('btn-save-file').style.display = 'none';
   window._lastBytes = null;
   input.placeholder = m.hashMode ? 'Enter text to hash…' : 'Enter text here…';
+  const swapBtn = document.getElementById('btn-swap');
+  const noSwap = currentMode === 'hash' || currentMode === 'jwt';
+  swapBtn.classList.toggle('btn-disabled', noSwap);
+  swapBtn.title = noSwap ? 'Swap недоступен для этого режима' : 'Use output as input for next operation';
   convert();
 });
 
 document.getElementById('status-mode').textContent = '· ' + (document.querySelector('.tab.active')?.textContent || '');
 
 // ── Controls ───────────────────────────────────────────────────────────────
-input.addEventListener('input', convert);
+let _debounceTimer = null;
+input.addEventListener('input', () => {
+  if (currentMode === 'hash') {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(convert, 300);
+  } else {
+    convert();
+  }
+});
 
 const EXAMPLES = {
   'base64-enc': 'Hello, World! 🌍\nThis is a Base64 encoding example.',
-  'base64-dec': 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+  'base64-dec': 'SGVsbG8sIFdvcmxkISBUaGlzIGlzIGEgQmFzZTY0IGRlY29kZSBleGFtcGxlLg==',
   'url-enc':    '/api/search?q=страховой полис&type=ОСАГО&from=2024-01-01&to=2024-12-31',
   'url-dec':    'https%3A%2F%2Fexample.com%2Fsearch%3Fq%3D%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82%20%D0%BC%D0%B8%D1%80%26lang%3Dru',
   'hash':       'password123',
@@ -1026,6 +1049,21 @@ document.addEventListener('click', e => {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeThemeDropdown();
+  // Ctrl/Cmd+Shift+C → copy output
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') {
+    e.preventDefault();
+    document.getElementById('btn-copy').click();
+  }
+  // Ctrl/Cmd+Shift+X → swap
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'X') {
+    e.preventDefault();
+    document.getElementById('btn-swap').click();
+  }
+  // Ctrl/Cmd+L → clear input
+  if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+    e.preventDefault();
+    document.getElementById('btn-clear').click();
+  }
 });
 
 updateActiveSwatch();
@@ -1071,16 +1109,12 @@ updateActiveSwatch();
 
     updateDisplay();
 
-    document.getElementById('mode-tabs').addEventListener('click', e => {
-      const btn = e.target.closest('.tab');
-      if (!btn) return;
-      const mode = btn.dataset.mode;
-      if (mode) {
-        stats.actions[mode] = (stats.actions[mode] || 0) + 1;
-        save();
-        updateDisplay();
-      }
-    }, true);
+    window._statsTrack = function(mode) {
+      if (!mode || !MODES_LIST.includes(mode)) return;
+      stats.actions[mode] = (stats.actions[mode] || 0) + 1;
+      save();
+      updateDisplay();
+    };
   })();
 </script>
 </body>
