@@ -549,6 +549,8 @@
     <button class="tab" data-mode="hex-dec">HEX Dec</button>
     <div class="tab-sep"></div>
     <button class="tab" data-mode="jwt">JWT Dec</button>
+    <div class="tab-sep"></div>
+    <button class="tab" data-mode="ascii-dec">ASCII → Text</button>
   </div>
 
   <div class="header-right">
@@ -572,6 +574,7 @@
         <div class="st-row"><span class="st-label">HEX Enc</span><span class="st-num" id="st-hex-enc">0</span></div>
         <div class="st-row"><span class="st-label">HEX Dec</span><span class="st-num" id="st-hex-dec">0</span></div>
         <div class="st-row"><span class="st-label">JWT Dec</span><span class="st-num" id="st-jwt">0</span></div>
+        <div class="st-row"><span class="st-label">ASCII → Text</span><span class="st-num" id="st-ascii-dec">0</span></div>
       </div>
     </div>
     <div class="theme-picker" id="themePicker">
@@ -690,6 +693,7 @@ const MODES = {
   'hex-enc':    { inputLabel: 'Plain text', outputLabel: 'HEX',         hashMode: false },
   'hex-dec':    { inputLabel: 'HEX',        outputLabel: 'Plain text',  hashMode: false },
   'jwt':        { inputLabel: 'JWT token',  outputLabel: 'Decoded JWT', hashMode: false },
+  'ascii-dec':  { inputLabel: 'ASCII codes', outputLabel: 'Text',       hashMode: false },
 };
 
 let currentMode = 'base64-enc';
@@ -777,6 +781,16 @@ async function convert() {
         setStatus('OK — 4 algorithms');
         window._statsTrack?.('hash');
         return;
+      }
+
+      case 'ascii-dec': {
+        const nums = val.trim().replace(/[,;]+/g, ' ').split(/\s+/).filter(Boolean);
+        if (!nums.every(n => /^\d+$/.test(n))) throw new Error('Invalid input — use decimal ASCII codes separated by spaces or commas');
+        const codes = nums.map(Number);
+        const outOfRange = codes.find(n => n < 0 || n > 127);
+        if (outOfRange !== undefined) throw new Error(`Value ${outOfRange} is out of ASCII range (0–127)`);
+        result = codes.map(n => String.fromCharCode(n)).join('');
+        break;
       }
 
       case 'jwt': {
@@ -928,6 +942,7 @@ const EXAMPLES = {
   'hex-enc':    'Hello, HEX!',
   'hex-dec':    '48 65 6c 6c 6f 2c 20 48 45 58 21',
   'jwt':        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+  'ascii-dec':  '72 101 108 108 111 44 32 87 111 114 108 100 33',
 };
 
 document.getElementById('btn-example').addEventListener('click', () => {
@@ -1072,7 +1087,7 @@ updateActiveSwatch();
   (function initStats() {
     const LS = 'enc_stats';
     const LU = 'enc_uid';
-    const MODES_LIST = ['base64-enc','base64-dec','url-enc','url-dec','hash','hex-enc','hex-dec','jwt'];
+    const MODES_LIST = ['base64-enc','base64-dec','url-enc','url-dec','hash','hex-enc','hex-dec','jwt','ascii-dec'];
 
     let uid = localStorage.getItem(LU);
     if (!uid) { uid = Math.random().toString(36).slice(2, 10); localStorage.setItem(LU, uid); }
