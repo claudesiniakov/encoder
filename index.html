@@ -449,59 +449,74 @@
     /* ── Diff mode ── */
     .diff-container {
       flex: 1;
-      position: relative;
-      overflow: hidden;
       display: none;
+      flex-direction: column;
+      overflow: hidden;
     }
-    .diff-container.active { display: block; }
+    .diff-container.active { display: flex; }
 
-    .diff-overlay {
-      position: absolute;
-      inset: 0;
+    #diff-input-b {
+      flex: 1;
+      min-height: 60px;
       padding: 16px 20px;
       font-family: 'JetBrains Mono', monospace;
       font-size: 13px;
       line-height: 1.7;
       background: var(--bg2);
       color: var(--text);
-      white-space: pre-wrap;
-      word-break: break-all;
+      border: none;
+      border-bottom: 2px solid var(--border);
+      outline: none;
+      resize: none;
       overflow-y: auto;
-      overflow-x: hidden;
-      pointer-events: none;
-      z-index: 0;
     }
+    #diff-input-b::placeholder { color: var(--dim); }
 
-    #diff-input-b {
-      position: absolute;
-      inset: 0;
+    .diff-result {
+      flex: 1.4;
       padding: 16px 20px;
       font-family: 'JetBrains Mono', monospace;
       font-size: 13px;
       line-height: 1.7;
-      background: transparent;
-      color: transparent;
-      caret-color: var(--text);
-      border: none;
-      outline: none;
-      resize: none;
-      z-index: 1;
+      background: var(--mono-bg);
+      color: var(--text);
       overflow-y: auto;
-      overflow-x: hidden;
-      word-break: break-all;
       white-space: pre-wrap;
+      word-break: break-all;
+      user-select: text;
     }
+    .diff-result.empty { color: var(--dim); font-style: italic; }
 
-    #diff-input-b::selection { background: rgba(99,155,255,0.3); }
+    /* stale banner via ::before */
+    .diff-container.stale .diff-result::before {
+      content: '⚠ Текст изменён — нажмите Сравнить';
+      display: block;
+      background: rgba(234,179,8,0.12);
+      border: 1px solid rgba(234,179,8,0.4);
+      border-radius: 6px;
+      color: #d97706;
+      font-size: 11px;
+      font-family: 'Inter', sans-serif;
+      font-style: normal;
+      font-weight: 500;
+      padding: 4px 10px;
+      margin-bottom: 12px;
+      pointer-events: none;
+    }
 
     .diff-ins {
       background: rgba(22,163,74,0.22);
       border-radius: 2px;
-      outline: 1px solid rgba(22,163,74,0.35);
+      outline: 1px solid rgba(22,163,74,0.3);
     }
-
-    .diff-overlay.stale { opacity: 0.35; transition: opacity 0.2s; }
-    .diff-overlay:not(.stale) { transition: opacity 0.15s; }
+    .diff-del {
+      background: rgba(220,38,38,0.15);
+      color: var(--red);
+      text-decoration: line-through;
+      text-decoration-color: var(--red);
+      border-radius: 2px;
+      outline: 1px solid rgba(220,38,38,0.3);
+    }
 
     .diff-meta-ins { color: var(--green); font-weight: 600; }
     .diff-meta-del { color: var(--red);   font-weight: 600; }
@@ -692,8 +707,8 @@
     </div>
     <div class="output-area empty" id="output">Result will appear here…</div>
     <div class="diff-container" id="diff-container">
-      <div class="diff-overlay" id="diff-overlay"></div>
       <textarea id="diff-input-b" placeholder="Enter text B here…" spellcheck="false"></textarea>
+      <div class="diff-result empty" id="diff-result">Нажмите Сравнить…</div>
     </div>
   </div>
 
@@ -1186,24 +1201,20 @@ updateActiveSwatch();
 
 // ── Diff mode ──────────────────────────────────────────────────────────────
 (function initDiff() {
-  const diffOverlay  = document.getElementById('diff-overlay');
-  const diffInputB   = document.getElementById('diff-input-b');
-  const diffMeta     = document.getElementById('diff-meta');
+  const diffContainer = document.getElementById('diff-container');
+  const diffInputB    = document.getElementById('diff-input-b');
+  const diffResult    = document.getElementById('diff-result');
+  const diffMeta      = document.getElementById('diff-meta');
 
-  // Sync scroll
-  diffInputB.addEventListener('scroll', () => {
-    diffOverlay.scrollTop  = diffInputB.scrollTop;
-    diffOverlay.scrollLeft = diffInputB.scrollLeft;
-  });
-
-  // Mark overlay stale when Text B changes
+  // Mark stale when either text changes
   diffInputB.addEventListener('input', () => {
     window._diffMarkStale?.();
   });
 
-  // Mark overlay stale (dims it, hints user to re-compare)
   window._diffMarkStale = function() {
-    if (diffOverlay.innerHTML) diffOverlay.classList.add('stale');
+    if (!diffResult.classList.contains('empty')) {
+      diffContainer.classList.add('stale');
+    }
     diffMeta.innerHTML = '';
     setStatus('Изменено — нажмите Сравнить');
     document.getElementById('char-count').textContent =
@@ -1216,8 +1227,9 @@ updateActiveSwatch();
 
   document.getElementById('btn-clear-b').addEventListener('click', () => {
     diffInputB.value = '';
-    diffOverlay.innerHTML = '';
-    diffOverlay.classList.remove('stale');
+    diffResult.innerHTML = 'Нажмите Сравнить…';
+    diffResult.className = 'diff-result empty';
+    diffContainer.classList.remove('stale');
     diffMeta.innerHTML = '';
     setStatus('Ready — введите тексты и нажмите Сравнить');
     document.getElementById('char-count').textContent = '';
@@ -1240,8 +1252,9 @@ updateActiveSwatch();
     const textB = diffInputB.value;
 
     if (!textA && !textB) {
-      diffOverlay.innerHTML = '';
-      diffOverlay.classList.remove('stale');
+      diffResult.innerHTML = 'Нажмите Сравнить…';
+      diffResult.className = 'diff-result empty';
+      diffContainer.classList.remove('stale');
       diffMeta.innerHTML = '';
       setStatus('Ready — введите тексты и нажмите Сравнить');
       document.getElementById('char-count').textContent = '';
@@ -1252,8 +1265,9 @@ updateActiveSwatch();
       `A: ${textA.length} · B: ${textB.length} chars`;
 
     const { html, ins, del, tooLong } = computeWordDiff(textA, textB);
-    diffOverlay.innerHTML = html;
-    diffOverlay.classList.remove('stale');
+    diffResult.innerHTML = html || '(пустой текст)';
+    diffResult.className = 'diff-result';
+    diffContainer.classList.remove('stale');
 
     let metaHtml = '';
     if (ins > 0) metaHtml += `<span class="diff-meta-ins">+${ins}</span> `;
@@ -1262,60 +1276,62 @@ updateActiveSwatch();
     diffMeta.innerHTML = metaHtml;
 
     const msg = tooLong
-      ? `Too long — rough diff`
+      ? 'Слишком длинный — приблизительный diff'
       : (!ins && !del ? 'Тексты идентичны' : `+${ins} добавлено / −${del} удалено`);
     setStatus(msg);
     window._statsTrack?.('diff');
-
-    diffOverlay.scrollTop = diffInputB.scrollTop;
   };
 
   function computeWordDiff(textA, textB) {
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    const tokA = textA.match(/[^\s]+|\s+/g) || [];
-    const tokB = textB.match(/[^\s]+|\s+/g) || [];
+    // Tokenize: non-whitespace words OR whitespace runs
+    const tokA = textA.match(/\S+|\s+/g) || [];
+    const tokB = textB.match(/\S+|\s+/g) || [];
 
-    // Fallback for very large texts (skip LCS)
-    if (tokA.length * tokB.length > 600000) {
+    // Fallback for very large texts
+    if (tokA.length * tokB.length > 800000) {
+      let ins = 0, del = 0;
       const setA = new Set(tokA.filter(t => t.trim()));
       const setB = new Set(tokB.filter(t => t.trim()));
-      let ins = 0, del = 0;
       setB.forEach(t => { if (!setA.has(t)) ins++; });
       setA.forEach(t => { if (!setB.has(t)) del++; });
       return { html: esc(textB), ins, del, tooLong: true };
     }
 
-    // LCS DP
+    // LCS DP (only keep two rows to save memory)
     const m = tokA.length, n = tokB.length;
-    const dp = [];
-    for (let i = 0; i <= m; i++) {
-      dp[i] = new Int32Array(n + 1);
-    }
+    let prev = new Int32Array(n + 1);
+    let curr = new Int32Array(n + 1);
+    // Store full table for backtrack
+    const table = [prev];
     for (let i = 1; i <= m; i++) {
+      curr = new Int32Array(n + 1);
       for (let j = 1; j <= n; j++) {
-        dp[i][j] = tokA[i-1] === tokB[j-1]
-          ? dp[i-1][j-1] + 1
-          : Math.max(dp[i-1][j], dp[i][j-1]);
+        curr[j] = tokA[i-1] === tokB[j-1]
+          ? table[i-1][j-1] + 1
+          : Math.max(table[i-1][j], curr[j-1]);
       }
+      table.push(curr);
     }
 
-    // Backtrack
+    // Backtrack — prefer del (A) when tied, giving "del A then ins B" order
     const ops = [];
     let i = m, j = n;
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0 && tokA[i-1] === tokB[j-1]) {
-        ops.unshift({ t: 0, v: tokB[j-1] });
+        ops.unshift({ t: 0, v: tokA[i-1] });
         i--; j--;
-      } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
-        ops.unshift({ t: 1, v: tokB[j-1] }); // inserted in B
-        j--;
-      } else {
+      } else if (i > 0 && (j === 0 || table[i-1][j] >= table[i][j-1])) {
         ops.unshift({ t: -1, v: tokA[i-1] }); // deleted from A
         i--;
+      } else {
+        ops.unshift({ t: 1, v: tokB[j-1] }); // inserted in B
+        j--;
       }
     }
 
+    // Render: eq=plain, del=red strikethrough, ins=green highlight
     let html = '', ins = 0, del = 0;
     for (const op of ops) {
       if (op.t === 0) {
@@ -1324,7 +1340,7 @@ updateActiveSwatch();
         html += `<span class="diff-ins">${esc(op.v)}</span>`;
         if (op.v.trim()) ins++;
       } else {
-        // deleted: not in textB, so don't add to html, just count
+        html += `<span class="diff-del">${esc(op.v)}</span>`;
         if (op.v.trim()) del++;
       }
     }
