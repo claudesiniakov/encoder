@@ -500,8 +500,19 @@
       outline: 1px solid rgba(22,163,74,0.35);
     }
 
+    .diff-overlay.stale { opacity: 0.35; transition: opacity 0.2s; }
+    .diff-overlay:not(.stale) { transition: opacity 0.15s; }
+
     .diff-meta-ins { color: var(--green); font-weight: 600; }
     .diff-meta-del { color: var(--red);   font-weight: 600; }
+
+    #btn-compare {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    #btn-compare:hover { opacity: 0.88; }
 
     /* ── STATS COUNTER ── */
     .stats-pill {
@@ -676,6 +687,7 @@
         <span id="diff-meta" class="output-meta"></span>
         <button class="btn" id="btn-clear-b">Clear</button>
         <button class="btn" id="btn-paste-b">Paste</button>
+        <button class="btn" id="btn-compare">Сравнить</button>
       </div>
     </div>
     <div class="output-area empty" id="output">Result will appear here…</div>
@@ -996,7 +1008,12 @@ document.getElementById('mode-tabs').addEventListener('click', e => {
   document.getElementById('diff-container').classList.toggle('active', isDiff);
 
   if (isDiff) {
-    diffUpdate();
+    // reset overlay on mode switch
+    const ov = document.getElementById('diff-overlay');
+    if (ov) { ov.innerHTML = ''; ov.classList.remove('stale'); }
+    document.getElementById('diff-meta').innerHTML = '';
+    setStatus('Ready — введите тексты и нажмите Сравнить');
+    document.getElementById('char-count').textContent = '';
   } else {
     convert();
   }
@@ -1008,8 +1025,7 @@ document.getElementById('status-mode').textContent = '· ' + (document.querySele
 let _debounceTimer = null;
 input.addEventListener('input', () => {
   if (currentMode === 'diff') {
-    clearTimeout(_debounceTimer);
-    _debounceTimer = setTimeout(diffUpdate, 80);
+    window._diffMarkStale?.();
   } else if (currentMode === 'hash') {
     clearTimeout(_debounceTimer);
     _debounceTimer = setTimeout(convert, 300);
@@ -1180,21 +1196,38 @@ updateActiveSwatch();
     diffOverlay.scrollLeft = diffInputB.scrollLeft;
   });
 
+  // Mark overlay stale when Text B changes
   diffInputB.addEventListener('input', () => {
-    clearTimeout(_debounceTimer);
-    _debounceTimer = setTimeout(diffUpdate, 80);
+    window._diffMarkStale?.();
+  });
+
+  // Mark overlay stale (dims it, hints user to re-compare)
+  window._diffMarkStale = function() {
+    if (diffOverlay.innerHTML) diffOverlay.classList.add('stale');
+    diffMeta.innerHTML = '';
+    setStatus('Изменено — нажмите Сравнить');
+    document.getElementById('char-count').textContent =
+      `A: ${input.value.length} · B: ${diffInputB.value.length} chars`;
+  };
+
+  document.getElementById('btn-compare').addEventListener('click', () => {
+    window.diffUpdate();
   });
 
   document.getElementById('btn-clear-b').addEventListener('click', () => {
     diffInputB.value = '';
-    diffUpdate();
+    diffOverlay.innerHTML = '';
+    diffOverlay.classList.remove('stale');
+    diffMeta.innerHTML = '';
+    setStatus('Ready — введите тексты и нажмите Сравнить');
+    document.getElementById('char-count').textContent = '';
     diffInputB.focus();
   });
 
   document.getElementById('btn-paste-b').addEventListener('click', async () => {
     try {
       diffInputB.value = await navigator.clipboard.readText();
-      diffUpdate();
+      window._diffMarkStale?.();
     } catch {
       setStatus('Clipboard access denied — paste manually (Ctrl+V)', true);
       diffInputB.focus();
@@ -1208,8 +1241,9 @@ updateActiveSwatch();
 
     if (!textA && !textB) {
       diffOverlay.innerHTML = '';
+      diffOverlay.classList.remove('stale');
       diffMeta.innerHTML = '';
-      setStatus('Ready');
+      setStatus('Ready — введите тексты и нажмите Сравнить');
       document.getElementById('char-count').textContent = '';
       return;
     }
@@ -1219,6 +1253,7 @@ updateActiveSwatch();
 
     const { html, ins, del, tooLong } = computeWordDiff(textA, textB);
     diffOverlay.innerHTML = html;
+    diffOverlay.classList.remove('stale');
 
     let metaHtml = '';
     if (ins > 0) metaHtml += `<span class="diff-meta-ins">+${ins}</span> `;
@@ -1228,12 +1263,11 @@ updateActiveSwatch();
 
     const msg = tooLong
       ? `Too long — rough diff`
-      : (!ins && !del ? 'Texts are identical' : `+${ins} added / −${del} removed`);
+      : (!ins && !del ? 'Тексты идентичны' : `+${ins} добавлено / −${del} удалено`);
     setStatus(msg);
     window._statsTrack?.('diff');
 
-    // Keep overlay scroll in sync after update
-    diffOverlay.scrollTop  = diffInputB.scrollTop;
+    diffOverlay.scrollTop = diffInputB.scrollTop;
   };
 
   function computeWordDiff(textA, textB) {
