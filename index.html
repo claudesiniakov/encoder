@@ -1274,12 +1274,8 @@ updateActiveSwatch();
     document.getElementById('char-count').textContent =
       `A: ${textA.length} · B: ${textB.length} chars`;
 
-    const { htmlB, htmlDel, ins, del, tooLong } = computeWordDiff(textA, textB);
-    let out = htmlB || '(пустой текст B)';
-    if (htmlDel) {
-      out += `\n<span class="diff-sep">────── удалено из A ──────</span>\n${htmlDel}`;
-    }
-    diffResult.innerHTML = out;
+    const { html, ins, del, tooLong } = computeDiff(textA, textB);
+    diffResult.innerHTML = html || '(пустой текст)';
     diffResult.className = 'diff-result';
     diffContainer.classList.remove('stale');
 
@@ -1296,70 +1292,99 @@ updateActiveSwatch();
     window._statsTrack?.('diff');
   };
 
-  function computeWordDiff(textA, textB) {
+  function computeDiff(textA, textB) {
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const m = textA.length, n = textB.length;
 
-    // Tokenize: non-whitespace words OR whitespace runs
+    // Character-level LCS (limit: 2000×2000 = 4M ops)
+    if (m > 2000 || n > 2000) {
+      // Word-level fallback for long texts
+      return computeWordDiff(textA, textB, esc);
+    }
+
+    // Full DP table for backtracking
+    const table = new Array(m + 1);
+    for (let i = 0; i <= m; i++) table[i] = new Int32Array(n + 1);
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        table[i][j] = textA[i-1] === textB[j-1]
+          ? table[i-1][j-1] + 1
+          : Math.max(table[i-1][j], table[i][j-1]);
+      }
+    }
+
+    // Backtrack
+    const ops = [];
+    let i = m, j = n;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && textA[i-1] === textB[j-1]) {
+        ops.unshift({ t: 0, v: textA[i-1] }); i--; j--;
+      } else if (i > 0 && (j === 0 || table[i-1][j] >= table[i][j-1])) {
+        ops.unshift({ t: -1, v: textA[i-1] }); i--;
+      } else {
+        ops.unshift({ t: 1, v: textB[j-1] }); j--;
+      }
+    }
+
+    // Merge adjacent same-type ops into runs
+    const merged = [];
+    for (const op of ops) {
+      if (merged.length && merged[merged.length-1].t === op.t) {
+        merged[merged.length-1].v += op.v;
+      } else {
+        merged.push({ t: op.t, v: op.v });
+      }
+    }
+
+    // Render inline: eq=plain, del=red strikethrough, ins=green
+    let html = '', ins = 0, del = 0;
+    for (const op of merged) {
+      if (op.t === 0) {
+        html += esc(op.v);
+      } else if (op.t === 1) {
+        html += `<span class="diff-ins">${esc(op.v)}</span>`;
+        ins++;
+      } else {
+        html += `<span class="diff-del">${esc(op.v)}</span>`;
+        del++;
+      }
+    }
+    return { html, ins, del };
+  }
+
+  function computeWordDiff(textA, textB, esc) {
+    esc = esc || (s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
     const tokA = textA.match(/\S+|\s+/g) || [];
     const tokB = textB.match(/\S+|\s+/g) || [];
-
-    // Fallback for very large texts
-    if (tokA.length * tokB.length > 800000) {
-      let ins = 0, del = 0;
-      const setA = new Set(tokA.filter(t => t.trim()));
-      const setB = new Set(tokB.filter(t => t.trim()));
-      setB.forEach(t => { if (!setA.has(t)) ins++; });
-      setA.forEach(t => { if (!setB.has(t)) del++; });
-      return { html: esc(textB), ins, del, tooLong: true };
+    if (tokA.length * tokB.length > 1000000) {
+      return { html: esc(textB), ins: 0, del: 0, tooLong: true };
     }
-
-    // LCS DP (only keep two rows to save memory)
     const m = tokA.length, n = tokB.length;
-    let prev = new Int32Array(n + 1);
-    let curr = new Int32Array(n + 1);
-    // Store full table for backtrack
-    const table = [prev];
-    for (let i = 1; i <= m; i++) {
-      curr = new Int32Array(n + 1);
-      for (let j = 1; j <= n; j++) {
-        curr[j] = tokA[i-1] === tokB[j-1]
+    const table = new Array(m + 1);
+    for (let i = 0; i <= m; i++) table[i] = new Int32Array(n + 1);
+    for (let i = 1; i <= m; i++)
+      for (let j = 1; j <= n; j++)
+        table[i][j] = tokA[i-1] === tokB[j-1]
           ? table[i-1][j-1] + 1
-          : Math.max(table[i-1][j], curr[j-1]);
-      }
-      table.push(curr);
-    }
-
-    // Backtrack — prefer del (A) when tied, giving "del A then ins B" order
+          : Math.max(table[i-1][j], table[i][j-1]);
     const ops = [];
     let i = m, j = n;
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0 && tokA[i-1] === tokB[j-1]) {
-        ops.unshift({ t: 0, v: tokA[i-1] });
-        i--; j--;
+        ops.unshift({ t: 0, v: tokA[i-1] }); i--; j--;
       } else if (i > 0 && (j === 0 || table[i-1][j] >= table[i][j-1])) {
-        ops.unshift({ t: -1, v: tokA[i-1] }); // deleted from A
-        i--;
+        ops.unshift({ t: -1, v: tokA[i-1] }); i--;
       } else {
-        ops.unshift({ t: 1, v: tokB[j-1] }); // inserted in B
-        j--;
+        ops.unshift({ t: 1, v: tokB[j-1] }); j--;
       }
     }
-
-    // Render B text (eq + ins only), collect del separately
-    let htmlB = '', htmlDel = '', ins = 0, del = 0;
+    let html = '', ins = 0, del = 0;
     for (const op of ops) {
-      if (op.t === 0) {
-        htmlB += esc(op.v);
-      } else if (op.t === 1) {
-        htmlB += `<span class="diff-ins">${esc(op.v)}</span>`;
-        if (op.v.trim()) ins++;
-      } else {
-        htmlDel += `<span class="diff-del">${esc(op.v)}</span>`;
-        if (op.v.trim()) del++;
-      }
+      if (op.t === 0)       html += esc(op.v);
+      else if (op.t === 1) { html += `<span class="diff-ins">${esc(op.v)}</span>`; ins++; }
+      else                 { html += `<span class="diff-del">${esc(op.v)}</span>`; del++; }
     }
-
-    return { htmlB, htmlDel, ins, del };
+    return { html, ins, del };
   }
 })();
 
