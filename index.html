@@ -445,6 +445,64 @@
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Diff mode ── */
+    .diff-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: none;
+    }
+    .diff-container.active { display: block; }
+
+    .diff-overlay {
+      position: absolute;
+      inset: 0;
+      padding: 16px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      background: var(--bg2);
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-y: auto;
+      overflow-x: hidden;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #diff-input-b {
+      position: absolute;
+      inset: 0;
+      padding: 16px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      background: transparent;
+      color: transparent;
+      caret-color: var(--text);
+      border: none;
+      outline: none;
+      resize: none;
+      z-index: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+
+    #diff-input-b::selection { background: rgba(99,155,255,0.3); }
+
+    .diff-ins {
+      background: rgba(22,163,74,0.22);
+      border-radius: 2px;
+      outline: 1px solid rgba(22,163,74,0.35);
+    }
+
+    .diff-meta-ins { color: var(--green); font-weight: 600; }
+    .diff-meta-del { color: var(--red);   font-weight: 600; }
+
     /* ── STATS COUNTER ── */
     .stats-pill {
       position: relative;
@@ -551,6 +609,8 @@
     <button class="tab" data-mode="jwt">JWT Dec</button>
     <div class="tab-sep"></div>
     <button class="tab" data-mode="ascii-dec">ASCII → Text</button>
+    <div class="tab-sep"></div>
+    <button class="tab" data-mode="diff">Diff</button>
   </div>
 
   <div class="header-right">
@@ -575,6 +635,7 @@
         <div class="st-row"><span class="st-label">HEX Dec</span><span class="st-num" id="st-hex-dec">0</span></div>
         <div class="st-row"><span class="st-label">JWT Dec</span><span class="st-num" id="st-jwt">0</span></div>
         <div class="st-row"><span class="st-label">ASCII → Text</span><span class="st-num" id="st-ascii-dec">0</span></div>
+        <div class="st-row"><span class="st-label">Diff</span><span class="st-num" id="st-diff">0</span></div>
       </div>
     </div>
     <div class="theme-picker" id="themePicker">
@@ -605,14 +666,23 @@
   <div class="panel" id="panel-output">
     <div class="panel-header">
       <span id="output-label">Output</span>
-      <div class="panel-actions">
+      <div class="panel-actions" id="normal-actions">
         <span id="output-meta" class="output-meta"></span>
         <button class="btn" id="btn-save-file" style="display:none">↓ Save file</button>
         <button class="btn" id="btn-copy">Copy</button>
         <button class="btn btn-primary" id="btn-swap" title="Use output as input for next operation">⇄ Swap</button>
       </div>
+      <div class="panel-actions" id="diff-actions" style="display:none">
+        <span id="diff-meta" class="output-meta"></span>
+        <button class="btn" id="btn-clear-b">Clear</button>
+        <button class="btn" id="btn-paste-b">Paste</button>
+      </div>
     </div>
     <div class="output-area empty" id="output">Result will appear here…</div>
+    <div class="diff-container" id="diff-container">
+      <div class="diff-overlay" id="diff-overlay"></div>
+      <textarea id="diff-input-b" placeholder="Enter text B here…" spellcheck="false"></textarea>
+    </div>
   </div>
 
 </div>
@@ -694,6 +764,7 @@ const MODES = {
   'hex-dec':    { inputLabel: 'HEX',        outputLabel: 'Plain text',  hashMode: false },
   'jwt':        { inputLabel: 'JWT token',  outputLabel: 'Decoded JWT', hashMode: false },
   'ascii-dec':  { inputLabel: 'ASCII codes', outputLabel: 'Text',       hashMode: false },
+  'diff':       { inputLabel: 'Text A',     outputLabel: 'Text B',     hashMode: false },
 };
 
 let currentMode = 'base64-enc';
@@ -914,10 +985,21 @@ document.getElementById('mode-tabs').addEventListener('click', e => {
   window._lastBytes = null;
   input.placeholder = m.hashMode ? 'Enter text to hash…' : 'Enter text here…';
   const swapBtn = document.getElementById('btn-swap');
-  const noSwap = currentMode === 'hash' || currentMode === 'jwt';
+  const noSwap = currentMode === 'hash' || currentMode === 'jwt' || currentMode === 'diff';
   swapBtn.classList.toggle('btn-disabled', noSwap);
   swapBtn.title = noSwap ? 'Swap недоступен для этого режима' : 'Use output as input for next operation';
-  convert();
+
+  const isDiff = currentMode === 'diff';
+  document.getElementById('normal-actions').style.display = isDiff ? 'none' : '';
+  document.getElementById('diff-actions').style.display   = isDiff ? '' : 'none';
+  document.getElementById('output').style.display         = isDiff ? 'none' : '';
+  document.getElementById('diff-container').classList.toggle('active', isDiff);
+
+  if (isDiff) {
+    diffUpdate();
+  } else {
+    convert();
+  }
 });
 
 document.getElementById('status-mode').textContent = '· ' + (document.querySelector('.tab.active')?.textContent || '');
@@ -925,7 +1007,10 @@ document.getElementById('status-mode').textContent = '· ' + (document.querySele
 // ── Controls ───────────────────────────────────────────────────────────────
 let _debounceTimer = null;
 input.addEventListener('input', () => {
-  if (currentMode === 'hash') {
+  if (currentMode === 'diff') {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(diffUpdate, 80);
+  } else if (currentMode === 'hash') {
     clearTimeout(_debounceTimer);
     _debounceTimer = setTimeout(convert, 300);
   } else {
@@ -1083,11 +1168,142 @@ document.addEventListener('keydown', e => {
 
 updateActiveSwatch();
 
+// ── Diff mode ──────────────────────────────────────────────────────────────
+(function initDiff() {
+  const diffOverlay  = document.getElementById('diff-overlay');
+  const diffInputB   = document.getElementById('diff-input-b');
+  const diffMeta     = document.getElementById('diff-meta');
+
+  // Sync scroll
+  diffInputB.addEventListener('scroll', () => {
+    diffOverlay.scrollTop  = diffInputB.scrollTop;
+    diffOverlay.scrollLeft = diffInputB.scrollLeft;
+  });
+
+  diffInputB.addEventListener('input', () => {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(diffUpdate, 80);
+  });
+
+  document.getElementById('btn-clear-b').addEventListener('click', () => {
+    diffInputB.value = '';
+    diffUpdate();
+    diffInputB.focus();
+  });
+
+  document.getElementById('btn-paste-b').addEventListener('click', async () => {
+    try {
+      diffInputB.value = await navigator.clipboard.readText();
+      diffUpdate();
+    } catch {
+      setStatus('Clipboard access denied — paste manually (Ctrl+V)', true);
+      diffInputB.focus();
+    }
+  });
+
+  window.diffUpdate = function() {
+    if (currentMode !== 'diff') return;
+    const textA = input.value;
+    const textB = diffInputB.value;
+
+    if (!textA && !textB) {
+      diffOverlay.innerHTML = '';
+      diffMeta.innerHTML = '';
+      setStatus('Ready');
+      document.getElementById('char-count').textContent = '';
+      return;
+    }
+
+    document.getElementById('char-count').textContent =
+      `A: ${textA.length} · B: ${textB.length} chars`;
+
+    const { html, ins, del, tooLong } = computeWordDiff(textA, textB);
+    diffOverlay.innerHTML = html;
+
+    let metaHtml = '';
+    if (ins > 0) metaHtml += `<span class="diff-meta-ins">+${ins}</span> `;
+    if (del > 0) metaHtml += `<span class="diff-meta-del">−${del}</span>`;
+    if (!ins && !del) metaHtml = '<span style="color:var(--green)">Identical</span>';
+    diffMeta.innerHTML = metaHtml;
+
+    const msg = tooLong
+      ? `Too long — rough diff`
+      : (!ins && !del ? 'Texts are identical' : `+${ins} added / −${del} removed`);
+    setStatus(msg);
+    window._statsTrack?.('diff');
+
+    // Keep overlay scroll in sync after update
+    diffOverlay.scrollTop  = diffInputB.scrollTop;
+  };
+
+  function computeWordDiff(textA, textB) {
+    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    const tokA = textA.match(/[^\s]+|\s+/g) || [];
+    const tokB = textB.match(/[^\s]+|\s+/g) || [];
+
+    // Fallback for very large texts (skip LCS)
+    if (tokA.length * tokB.length > 600000) {
+      const setA = new Set(tokA.filter(t => t.trim()));
+      const setB = new Set(tokB.filter(t => t.trim()));
+      let ins = 0, del = 0;
+      setB.forEach(t => { if (!setA.has(t)) ins++; });
+      setA.forEach(t => { if (!setB.has(t)) del++; });
+      return { html: esc(textB), ins, del, tooLong: true };
+    }
+
+    // LCS DP
+    const m = tokA.length, n = tokB.length;
+    const dp = [];
+    for (let i = 0; i <= m; i++) {
+      dp[i] = new Int32Array(n + 1);
+    }
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = tokA[i-1] === tokB[j-1]
+          ? dp[i-1][j-1] + 1
+          : Math.max(dp[i-1][j], dp[i][j-1]);
+      }
+    }
+
+    // Backtrack
+    const ops = [];
+    let i = m, j = n;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && tokA[i-1] === tokB[j-1]) {
+        ops.unshift({ t: 0, v: tokB[j-1] });
+        i--; j--;
+      } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+        ops.unshift({ t: 1, v: tokB[j-1] }); // inserted in B
+        j--;
+      } else {
+        ops.unshift({ t: -1, v: tokA[i-1] }); // deleted from A
+        i--;
+      }
+    }
+
+    let html = '', ins = 0, del = 0;
+    for (const op of ops) {
+      if (op.t === 0) {
+        html += esc(op.v);
+      } else if (op.t === 1) {
+        html += `<span class="diff-ins">${esc(op.v)}</span>`;
+        if (op.v.trim()) ins++;
+      } else {
+        // deleted: not in textB, so don't add to html, just count
+        if (op.v.trim()) del++;
+      }
+    }
+
+    return { html, ins, del };
+  }
+})();
+
   // ── STATS ─────────────────────────────────────────────────────────────────
   (function initStats() {
     const LS = 'enc_stats';
     const LU = 'enc_uid';
-    const MODES_LIST = ['base64-enc','base64-dec','url-enc','url-dec','hash','hex-enc','hex-dec','jwt','ascii-dec'];
+    const MODES_LIST = ['base64-enc','base64-dec','url-enc','url-dec','hash','hex-enc','hex-dec','jwt','ascii-dec','diff'];
 
     let uid = localStorage.getItem(LU);
     if (!uid) { uid = Math.random().toString(36).slice(2, 10); localStorage.setItem(LU, uid); }
