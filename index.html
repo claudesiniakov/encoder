@@ -1296,79 +1296,37 @@ updateActiveSwatch();
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const m = textA.length, n = textB.length;
 
-    // Character-level LCS (limit: 2000×2000 = 4M ops)
-    if (m > 2000 || n > 2000) {
-      // Word-level fallback for long texts
-      return computeWordDiff(textA, textB, esc);
+    // Tokenization strategy:
+    // ≤ 2000 chars each → character-level (max precision)
+    // > 2000 chars       → smart-token: alphanum runs as one token,
+    //                       each other char (/, ., ?, &, space…) as own token
+    let tokA, tokB;
+    const SPLIT = /[A-Za-z\u00C0-\u04FF0-9]+|[^A-Za-z\u00C0-\u04FF0-9]/g;
+    if (m <= 2000 && n <= 2000) {
+      tokA = [...textA];
+      tokB = [...textB];
+    } else {
+      tokA = textA.match(SPLIT) || [];
+      tokB = textB.match(SPLIT) || [];
     }
 
-    // Full DP table for backtracking
-    const table = new Array(m + 1);
-    for (let i = 0; i <= m; i++) table[i] = new Int32Array(n + 1);
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        table[i][j] = textA[i-1] === textB[j-1]
-          ? table[i-1][j-1] + 1
-          : Math.max(table[i-1][j], table[i][j-1]);
-      }
-    }
-
-    // Backtrack
-    const ops = [];
-    let i = m, j = n;
-    while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && textA[i-1] === textB[j-1]) {
-        ops.unshift({ t: 0, v: textA[i-1] }); i--; j--;
-      } else if (i > 0 && (j === 0 || table[i-1][j] >= table[i][j-1])) {
-        ops.unshift({ t: -1, v: textA[i-1] }); i--;
-      } else {
-        ops.unshift({ t: 1, v: textB[j-1] }); j--;
-      }
-    }
-
-    // Merge adjacent same-type ops into runs
-    const merged = [];
-    for (const op of ops) {
-      if (merged.length && merged[merged.length-1].t === op.t) {
-        merged[merged.length-1].v += op.v;
-      } else {
-        merged.push({ t: op.t, v: op.v });
-      }
-    }
-
-    // Render inline: eq=plain, del=red strikethrough, ins=green
-    let html = '', ins = 0, del = 0;
-    for (const op of merged) {
-      if (op.t === 0) {
-        html += esc(op.v);
-      } else if (op.t === 1) {
-        html += `<span class="diff-ins">${esc(op.v)}</span>`;
-        ins++;
-      } else {
-        html += `<span class="diff-del">${esc(op.v)}</span>`;
-        del++;
-      }
-    }
-    return { html, ins, del };
-  }
-
-  function computeWordDiff(textA, textB, esc) {
-    esc = esc || (s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
-    const tokA = textA.match(/\S+|\s+/g) || [];
-    const tokB = textB.match(/\S+|\s+/g) || [];
-    if (tokA.length * tokB.length > 1000000) {
+    const mt = tokA.length, nt = tokB.length;
+    if (mt * nt > 5000000) {
       return { html: esc(textB), ins: 0, del: 0, tooLong: true };
     }
-    const m = tokA.length, n = tokB.length;
-    const table = new Array(m + 1);
-    for (let i = 0; i <= m; i++) table[i] = new Int32Array(n + 1);
-    for (let i = 1; i <= m; i++)
-      for (let j = 1; j <= n; j++)
+
+    // LCS DP
+    const table = new Array(mt + 1);
+    for (let i = 0; i <= mt; i++) table[i] = new Int32Array(nt + 1);
+    for (let i = 1; i <= mt; i++)
+      for (let j = 1; j <= nt; j++)
         table[i][j] = tokA[i-1] === tokB[j-1]
           ? table[i-1][j-1] + 1
           : Math.max(table[i-1][j], table[i][j-1]);
+
+    // Backtrack
     const ops = [];
-    let i = m, j = n;
+    let i = mt, j = nt;
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0 && tokA[i-1] === tokB[j-1]) {
         ops.unshift({ t: 0, v: tokA[i-1] }); i--; j--;
@@ -1378,8 +1336,19 @@ updateActiveSwatch();
         ops.unshift({ t: 1, v: tokB[j-1] }); j--;
       }
     }
-    let html = '', ins = 0, del = 0;
+
+    // Merge adjacent same-type
+    const merged = [];
     for (const op of ops) {
+      if (merged.length && merged[merged.length-1].t === op.t)
+        merged[merged.length-1].v += op.v;
+      else
+        merged.push({ t: op.t, v: op.v });
+    }
+
+    // Render
+    let html = '', ins = 0, del = 0;
+    for (const op of merged) {
       if (op.t === 0)       html += esc(op.v);
       else if (op.t === 1) { html += `<span class="diff-ins">${esc(op.v)}</span>`; ins++; }
       else                 { html += `<span class="diff-del">${esc(op.v)}</span>`; del++; }
