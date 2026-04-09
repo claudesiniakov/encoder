@@ -518,6 +518,16 @@
       outline: 1px solid rgba(220,38,38,0.3);
     }
 
+    .diff-sep {
+      display: block;
+      margin: 12px 0 6px;
+      color: var(--dim);
+      font-size: 11px;
+      font-family: 'Inter', sans-serif;
+      font-style: normal;
+      letter-spacing: 0.04em;
+    }
+
     .diff-meta-ins { color: var(--green); font-weight: 600; }
     .diff-meta-del { color: var(--red);   font-weight: 600; }
 
@@ -1264,8 +1274,12 @@ updateActiveSwatch();
     document.getElementById('char-count').textContent =
       `A: ${textA.length} · B: ${textB.length} chars`;
 
-    const { html, ins, del, tooLong } = computeWordDiff(textA, textB);
-    diffResult.innerHTML = html || '(пустой текст)';
+    const { htmlB, htmlDel, ins, del, tooLong } = computeWordDiff(textA, textB);
+    let out = htmlB || '(пустой текст B)';
+    if (htmlDel) {
+      out += `\n<span class="diff-sep">────── удалено из A ──────</span>\n${htmlDel}`;
+    }
+    diffResult.innerHTML = out;
     diffResult.className = 'diff-result';
     diffContainer.classList.remove('stale');
 
@@ -1331,21 +1345,21 @@ updateActiveSwatch();
       }
     }
 
-    // Render: eq=plain, del=red strikethrough, ins=green highlight
-    let html = '', ins = 0, del = 0;
+    // Render B text (eq + ins only), collect del separately
+    let htmlB = '', htmlDel = '', ins = 0, del = 0;
     for (const op of ops) {
       if (op.t === 0) {
-        html += esc(op.v);
+        htmlB += esc(op.v);
       } else if (op.t === 1) {
-        html += `<span class="diff-ins">${esc(op.v)}</span>`;
+        htmlB += `<span class="diff-ins">${esc(op.v)}</span>`;
         if (op.v.trim()) ins++;
       } else {
-        html += `<span class="diff-del">${esc(op.v)}</span>`;
+        htmlDel += `<span class="diff-del">${esc(op.v)}</span>`;
         if (op.v.trim()) del++;
       }
     }
 
-    return { html, ins, del };
+    return { htmlB, htmlDel, ins, del };
   }
 })();
 
